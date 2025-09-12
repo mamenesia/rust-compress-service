@@ -1,12 +1,12 @@
 use std::net::SocketAddr;
 use tokio;
-use tracing::{info};
+use tracing::info;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 use rust_compress_api::{
     AppConfig, AppState,
-    core::database::{create_pool, init_database},
     api::create_router,
+    core::database::{create_pool, init_database},
 };
 
 #[tokio::main]
@@ -25,7 +25,7 @@ async fn main() {
 
     // Load configuration
     let config = AppConfig::from_env().expect("Failed to load configuration");
-    
+
     info!("Starting server with config: {:?}", config);
     info!("Database URL: {}", config.database.url);
 
@@ -33,12 +33,12 @@ async fn main() {
     let db_pool = create_pool(&config.database.url)
         .await
         .expect("Failed to create database pool");
-    
+
     // Initialize database
     init_database(&db_pool)
         .await
         .expect("Failed to initialize database");
-    
+
     info!("Database connected and initialized");
 
     // Create application state
@@ -54,4 +54,3 @@ async fn main() {
     let listener = tokio::net::TcpListener::bind(addr).await.unwrap();
     axum::serve(listener, app).await.unwrap();
 }
-

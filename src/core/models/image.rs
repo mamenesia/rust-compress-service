@@ -11,6 +11,10 @@ pub struct CompressImageRequest {
     /// Resize percentage (1-100)
     #[schema(example = 50, minimum = 1, maximum = 100)]
     pub resize: u8,
+    
+    /// JPEG quality (1-100, optional, defaults to 75)
+    #[schema(example = 75, minimum = 1, maximum = 100)]
+    pub quality: Option<u8>,
 }
 
 /// Response for successful image compression

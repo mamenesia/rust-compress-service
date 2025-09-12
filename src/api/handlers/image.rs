@@ -54,6 +54,9 @@ pub async fn compress_image_handler(
                 crate::services::ImageProcessingError::UnsupportedFormat => {
                     (StatusCode::BAD_REQUEST, "Unsupported image format".to_string())
                 }
+                crate::services::ImageProcessingError::InvalidInput(msg) => {
+                    (StatusCode::BAD_REQUEST, msg)
+                }
             };
             
             Err((

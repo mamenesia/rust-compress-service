@@ -7,6 +7,11 @@ edition = "2024"
 name = "rust_compress_api"
 path = "src/main.rs"
 
+[profile.release]
+lto = true              # Link-time optimization
+codegen-units = 1       # Better optimization
+panic = "abort"         # Smaller binary
+
 
 [dependencies]
 axum = "0.8.4"

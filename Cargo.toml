@@ -7,9 +7,6 @@ edition = "2024"
 name = "rust_compress_api"
 path = "src/main.rs"
 
-# [[bin]]
-# name = "admin"
-# path = "src/bin/admin.rs"
 
 [dependencies]
 axum = "0.8.4"

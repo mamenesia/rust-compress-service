@@ -6,7 +6,7 @@
 pub mod api;
 pub mod core;
 pub mod services;
-pub mod utils;
+// pub mod utils;
 pub mod docs;
 
 // Re-export commonly used types for convenience

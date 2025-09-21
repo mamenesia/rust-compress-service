@@ -1,9 +1,10 @@
 use crate::core::models::{CompressImageRequest, CompressImageResponse};
+use base64::prelude::*;
 use image::codecs::jpeg::JpegEncoder;
-use image::codecs::png::{CompressionType, PngEncoder};
-use image::{ColorType, DynamicImage, ImageFormat};
+// use image::codecs::png::{CompressionType, PngEncoder};
+use image::DynamicImage;
 use reqwest;
-use std::io::Cursor;
+// use std::io::Cursor;
 use thiserror::Error;
 use tracing::{error, info, warn};
 use uuid::Uuid;
@@ -46,13 +47,8 @@ impl ImageCompressionService {
         &self,
         request: CompressImageRequest,
     ) -> Result<CompressImageResponse, ImageProcessingError> {
-        // Validate resize percentage
-        if request.resize == 0 || request.resize > 100 {
-            return Err(ImageProcessingError::InvalidInput(
-                "Resize percentage must be between 1 and 100".to_string(),
-            ));
-        }
-
+        let start_time = std::time::Instant::now();
+        
         // Validate quality if provided
         let quality = request.quality.unwrap_or(75);
         if quality == 0 || quality > 100 {
@@ -61,10 +57,18 @@ impl ImageCompressionService {
             ));
         }
 
-        info!("Starting image compression for URL: {}", request.image_url);
+        info!("Starting image compression for file: {}", request.filename);
 
-        // Download the image
-        let image_data = self.download_image(&request.image_url).await?;
+        // Get image data from either base64 or URL
+        let image_data = if let Some(base64_data) = &request.image_data {
+            self.decode_base64_image(base64_data)?
+        } else if let Some(url) = &request.image_url {
+            self.download_image(url).await?
+        } else {
+            return Err(ImageProcessingError::InvalidInput(
+                "Either image_data or image_url must be provided".to_string(),
+            ));
+        };
         let original_size = image_data.len() as u64;
 
         info!("Downloaded image, size: {} bytes", original_size);
@@ -81,16 +85,21 @@ impl ImageCompressionService {
             img.height()
         );
 
-        // Resize the image
-        let resized_img = self.resize_image(img, request.resize);
+        // Resize the image if max dimensions specified
+        let resized_img = if let (Some(max_width), Some(max_height)) = (request.max_width, request.max_height) {
+            self.resize_image_to_fit(img, max_width, max_height)
+        } else {
+            img
+        };
+        
         info!(
-            "Image resized to: {}x{}",
+            "Image processed to: {}x{}",
             resized_img.width(),
             resized_img.height()
         );
 
         // Compress the image
-        let compressed_data = self.compress_image_data(resized_img, &content_type, quality)?;
+        let compressed_data = self.compress_image_data(resized_img.clone(), &content_type, quality)?;
         let compressed_size = compressed_data.len() as u64;
 
         info!("Image compressed, new size: {} bytes", compressed_size);
@@ -99,18 +108,36 @@ impl ImageCompressionService {
         let compression_ratio = compressed_size as f64 / original_size as f64;
 
         // Encode to base64
-        let base64_data = base64::encode(&compressed_data);
+        let base64_data = base64::prelude::BASE64_STANDARD.encode(&compressed_data);
+
+        // Generate thumbnail if requested
+        let (thumbnail_data, thumbnail_size) = if request.generate_thumbnail.unwrap_or(true) {
+            let thumbnail_size = request.thumbnail_size.unwrap_or(150);
+            match self.generate_thumbnail(&resized_img, thumbnail_size, quality) {
+                Ok((thumb_data, thumb_size)) => (Some(base64::prelude::BASE64_STANDARD.encode(&thumb_data)), Some(thumb_size)),
+                Err(e) => {
+                    warn!("Failed to generate thumbnail: {:?}", e);
+                    (None, None)
+                }
+            }
+        } else {
+            (None, None)
+        };
+
+        let processing_duration = start_time.elapsed().as_millis() as u64;
 
         let response = CompressImageResponse {
-            id: Uuid::now_v7().to_string(),
-            original_url: request.image_url,
+            file_id: Uuid::now_v7().to_string(),
+            filename: request.filename,
             original_size,
             compressed_size,
             compression_ratio,
-            resize_percentage: request.resize,
             compressed_data: base64_data,
+            thumbnail_data,
+            thumbnail_size,
             content_type,
             processed_at: chrono::Utc::now(),
+            processing_duration_ms: processing_duration,
         };
 
         info!(
@@ -134,18 +161,57 @@ impl ImageCompressionService {
         Ok(bytes.to_vec())
     }
 
-    fn resize_image(&self, img: DynamicImage, resize_percentage: u8) -> DynamicImage {
-        let width = img.width();
-        let height = img.height();
-        let new_width = (width as f32 * resize_percentage as f32 / 100.0) as u32;
-        let new_height = (height as f32 * resize_percentage as f32 / 100.0) as u32;
+    fn decode_base64_image(&self, base64_data: &str) -> Result<Vec<u8>, ImageProcessingError> {
+        // Handle data URL format (data:image/jpeg;base64,...)
+        let data_part = if base64_data.starts_with("data:") {
+            base64_data.split(',').nth(1).unwrap_or(base64_data)
+        } else {
+            base64_data
+        };
 
-        info!(
-            "Resizing image from {}x{} to {}x{}",
-            width, height, new_width, new_height
-        );
+        base64::prelude::BASE64_STANDARD.decode(data_part).map_err(|_| {
+            ImageProcessingError::InvalidInput("Invalid base64 image data".to_string())
+        })
+    }
 
-        img.resize(new_width, new_height, image::imageops::FilterType::Lanczos3)
+    fn resize_image_to_fit(&self, img: DynamicImage, max_width: u32, max_height: u32) -> DynamicImage {
+        let (width, height) = (img.width(), img.height());
+        
+        // Calculate scaling factor to fit within max dimensions
+        let scale_x = max_width as f32 / width as f32;
+        let scale_y = max_height as f32 / height as f32;
+        let scale = scale_x.min(scale_y).min(1.0); // Don't upscale
+        
+        if scale < 1.0 {
+            let new_width = (width as f32 * scale) as u32;
+            let new_height = (height as f32 * scale) as u32;
+            
+            info!(
+                "Resizing image from {}x{} to {}x{} (scale: {:.2})",
+                width, height, new_width, new_height, scale
+            );
+            
+            img.resize(new_width, new_height, image::imageops::FilterType::Lanczos3)
+        } else {
+            img
+        }
+    }
+
+    fn generate_thumbnail(&self, img: &DynamicImage, size: u32, quality: u8) -> Result<(Vec<u8>, u64), ImageProcessingError> {
+        // Create thumbnail maintaining aspect ratio
+        let thumbnail = img.resize(size, size, image::imageops::FilterType::Lanczos3);
+        
+        // Compress thumbnail with lower quality for smaller size
+        let thumb_quality = std::cmp::max(30, quality.saturating_sub(20));
+        
+        let mut buffer = Vec::new();
+        let mut encoder = JpegEncoder::new_with_quality(&mut buffer, thumb_quality);
+        encoder.encode_image(&thumbnail)?;
+        
+        let thumb_size = buffer.len() as u64;
+        info!("Generated thumbnail: {}x{}, size: {} bytes", thumbnail.width(), thumbnail.height(), thumb_size);
+        
+        Ok((buffer, thumb_size))
     }
 
     fn compress_image_data(

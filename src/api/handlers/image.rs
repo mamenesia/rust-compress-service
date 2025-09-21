@@ -19,7 +19,7 @@ use tracing::error;
 /// - 500: Internal server error
 #[utoipa::path(
     post,
-    path = "/compress-image",
+    path = "/compress",
     request_body = CompressImageRequest,
     responses(
         (status = 200, description = "Successfully compressed image", body = CompressImageResponse),

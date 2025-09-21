@@ -6,7 +6,7 @@ use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 use rust_compress_api::{
     AppConfig, AppState,
     api::create_router,
-    core::database::{create_pool, init_database},
+    // core::database::{create_pool, init_database},
 };
 
 #[tokio::main]
@@ -27,22 +27,22 @@ async fn main() {
     let config = AppConfig::from_env().expect("Failed to load configuration");
 
     info!("Starting server with config: {:?}", config);
-    info!("Database URL: {}", config.database.url);
+    // info!("Database URL: {}", config.database.url);
 
     // Create database connection pool
-    let db_pool = create_pool(&config.database.url)
-        .await
-        .expect("Failed to create database pool");
+    // let db_pool = create_pool(&config.database.url)
+    //     .await
+    //     .expect("Failed to create database pool");
 
     // Initialize database
-    init_database(&db_pool)
-        .await
-        .expect("Failed to initialize database");
+    // init_database(&db_pool)
+    //     .await
+    //     .expect("Failed to initialize database");
 
-    info!("Database connected and initialized");
+    // info!("Database connected and initialized");
 
     // Create application state
-    let state = AppState::new(db_pool);
+    let state = AppState::new(/* db_pool */);
 
     // Build our application with routes
     let app = create_router().with_state(state);

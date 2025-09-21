@@ -1,4 +1,4 @@
-use config::{Config, ConfigError, Environment, File};
+use config::ConfigError;
 use serde::Deserialize;
 
 #[derive(Debug, Deserialize, Clone)]
@@ -49,17 +49,17 @@ impl Default for AppConfig {
 impl AppConfig {
     pub fn from_env() -> Result<Self, ConfigError> {
         // Try to get DATABASE_URL directly from environment
-        let database_url = std::env::var("DATABASE_URL")
-            .unwrap_or_else(|_| "postgresql://postgres:password@localhost:5432/rust_compress_api".to_string());
-        
-        let server_host = std::env::var("SERVER_HOST")
-            .unwrap_or_else(|_| "0.0.0.0".to_string());
-        
+        let database_url = std::env::var("DATABASE_URL").unwrap_or_else(|_| {
+            "postgresql://postgres:password@localhost:5432/rust_compress_api".to_string()
+        });
+
+        let server_host = std::env::var("SERVER_HOST").unwrap_or_else(|_| "0.0.0.0".to_string());
+
         let server_port = std::env::var("SERVER_PORT")
             .unwrap_or_else(|_| "3000".to_string())
             .parse::<u16>()
             .unwrap_or(3000);
-        
+
         let debug = std::env::var("DEBUG")
             .unwrap_or_else(|_| "false".to_string())
             .parse::<bool>()
@@ -70,9 +70,7 @@ impl AppConfig {
                 host: server_host,
                 port: server_port,
             },
-            database: DatabaseConfig {
-                url: database_url,
-            },
+            database: DatabaseConfig { url: database_url },
             debug,
         })
     }
